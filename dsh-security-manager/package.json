@@ -1,0 +1,40 @@
+{
+  "name": "dsh-security-manager",
+  "version": "0.2.0",
+  "description": "Plugin manager for DeepSeek Harness: auto-discovers installed plugins, locates their npm / GitHub source, and provides snapshot-backed update and rollback from a Settings → Plugins tab.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./manager": "./lib/manager.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "plugin",
+    "plugin-manager",
+    "security",
+    "update",
+    "rollback"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kolos-alter/dsh-security-manager.git"
+  },
+  "homepage": "https://github.com/Kolos-alter/dsh-security-manager#readme"
+}
