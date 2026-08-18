@@ -4,6 +4,12 @@
   "description": "Plugin manager for DeepSeek Harness: auto-discovers installed plugins, locates their npm / GitHub source, and provides snapshot-backed update and rollback from a Settings → Plugins tab.",
   "type": "module",
   "main": "lib/index.js",
+  "files": [
+    "lib/",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",

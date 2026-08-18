@@ -133,6 +133,7 @@ dsh-security-manager/
 - 更新只对**自动识别到的已安装插件**执行，且**快照先行**；回退即时可用
 - 只读操作（status / snapshots / update-check）不修改任何文件
 - 脚本/路由不执行任意命令：更新仅通过 pnpm 安装指定包，来源由包元数据决定
+- 包名在进入 update / update-check 前经过**白名单校验**（拒绝路径穿越、反斜杠、`..` 等非法 spec）
 - 快照目录：`profiles/<profile>/.security-snapshots/`
 
 ## 📄 许可

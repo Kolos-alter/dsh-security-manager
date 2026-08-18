@@ -117,6 +117,7 @@ dsh-security-manager/
 - Updates only ever target **auto-discovered installed plugins**, and always **snapshot first**
 - Read-only routes (status / snapshots / update-check) never modify files
 - No arbitrary command execution: updates install a specific package via pnpm; the source comes from package metadata
+- Package names are **allowlist-validated** before entering update / update-check (rejects path traversal, backslashes, `..`, and other non-spec names)
 - Snapshots live in `profiles/<profile>/.security-snapshots/`
 
 ## 📄 License
