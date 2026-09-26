@@ -3,138 +3,159 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](package.json)
 
-**dsh-security-manager** 是一个 DeepSeek Harness（DSH）插件管理器：自动识别 profile 中已安装的插件，
-定位其 **npm / GitHub** 来源，并提供**快照保护的更新与回退**——全部集成在 Web 的
-**设置 → 插件 → 安全** 标签页中。
+**DSH 插件安全管理器。** 对 profile 里已安装的插件做**只读静态审计**，并在**更新前给出风险差异**、
+支持**快照保护的回退**（含只回退单个包）。
+
+> 定位说明：插件列表、启用状态、fiber 状态由 DSH 官方提供（`pluginInventory` + 设置→插件→全部），
+> 本插件**不重复实现**。这里只做官方没有的**安全**能力。详见 [`docs/adaptation-2026-09.md`](docs/adaptation-2026-09.md)。
 
 [English](./README.en.md)
 
 ---
 
-## ✨ 功能
+## ✨ 能力
 
-- 🔍 **自动识别插件**：读取 profile 的 `package.json` 依赖，自动发现已安装的插件（无需手动登记名单）
-- 🧭 **定位来源**：对每个插件识别其 npm 发布状态与 GitHub 仓库
-  - 已发布 npm → 查询 `registry.npmjs.org` 获取最新版本
-  - 仅有 GitHub 仓库（未发 npm）→ 从包内 `repository` 字段解析仓库，用 `github:<owner>/<repo>` 更新
-- 📸 **快照保护**：每次更新前自动备份 `package.json` / `cordis.patch.yml` / `pnpm-lock.yaml`，
-  可一键回退到任意快照
-- 🔁 **更新 / 回退**：来自 **npm 源**或 **GitHub 源**的插件都可更新；更新坏了随时回退
-- 🎨 **原生 UI**：仿照 DSH 现有设置页设计（CSS 变量、卡片、徽章、双语 zh/en），
-  纯增量（`replaceRisk: none`），不影响现有功能
-- 🛡️ **安全分类**：已知安全插件自动打上"安全"标记并排在最前
+### 1. 插件安全审计（本地、只读）
+
+对每个已装插件给出分级发现项与证据（文件:行号 + 代码片段）：
+
+| 类别 | 检查内容 | 严重度 |
+|---|---|---|
+| 安装期执行 | `preinstall` / `install` / `postinstall` | **high**（注册表安装即执行） |
+| 安装期执行 | `prepare` —— **按安装来源分级** | git/本地源 **high**（install 时会跑）· 注册表源 low（不跑） |
+| 供应链来源 | `file:`/`link:`/`portal:` 本地源 | medium |
+| 供应链来源 | `*` / `latest` 未固定版本 | medium |
+| 供应链来源 | lockfile 缺少 `integrity` | low |
+| 供应链来源 | `github:` / `git+` 源 | low |
+| 能力面 | 动态执行（`eval` / `new Function` / `vm`，仅真实运行时代码） | medium |
+| 能力面 | 访问凭据/设置数据（`.credentials.yaml` / `settings.yaml` / `DSH_HOME`） | low |
+| 能力面 | 子进程 / 网络 / 文件写入 | **info（能力清单，不计分）** |
+| 元数据 | 缺 `license` / `repository` | low |
+| 运行时 | 官方清单报告 `failed` | medium |
+
+- 评分 0–100 + A–D 等级；**能力清单不计分**——避免"每个插件都能起进程"这类噪音淹没真实风险
+- 扫描前**等长屏蔽注释**、只扫会被执行的 `.js/.mjs/.cjs`：不会把插件自己的 JSDoc 当危险代码
+- **只读**：不执行被审计插件的任何代码
+
+### 2. 更新影响预览（升级前先看差异）
+
+拉取候选版本的 `package.json`，对比风险字段：**新增/变更的安装期脚本、依赖集合变化、许可证与仓库变化**。
+把"盲目更新"变成"有依据的更新"。
+
+### 3. 快照保护的回退
+
+- 更新前自动快照 `package.json` / `cordis.patch.yml` / `pnpm-lock.yaml`
+- **快照差异**：回到某快照会改变哪些包（新增/移除/版本变化）
+- **按包回退**：只回退一个包到快照记录的 spec，其他插件不受影响；回退前再自动建安全快照
+- **整表回退**：还原全部受保护文件并重新安装
+
+---
 
 ## 📦 安装
 
-### 方式 A：GitHub 仓库（推荐，发布后）
-
 ```powershell
-# 1. 安装包（pnpm 的 github: 协议，或先 clone 后用本地路径）
+# 从 GitHub（pnpm 的 github: 协议）
 dsh plugin --profile web add "github:Kolos-alter/dsh-security-manager"
 
-# 2. 在 profile 的 cordis.patch.yml 挂载（热加载，无需重启）
+# 或本地开发：先打包，再用 file: 安装
+cd dsh-security-manager
+pnpm pack            # 生成 dsh-security-manager-<version>.tgz
+cd "$env:DSH_HOME\profiles\web"
+pnpm add "file:<上面 tgz 的绝对路径>"
 ```
 
+在 profile 的 `cordis.patch.yml` 挂载（热加载，无需重启）：
+
 ```yaml
-# profiles/web/cordis.patch.yml
 - insert:
     - id: security-manager
       name: dsh-security-manager
       config:
-        # 可选：pnpm 不在 PATH 时指定可执行文件
-        pnpmPath: 'C:\path\to\pnpm.cmd'
-        # 可选：home（默认 $DSH_HOME 或 ~/.dsh）、profile（默认 web）
+        # 全部可选
+        # home: 'D:\DeepSeekHarness-Portable\home'
+        # profile: web
+        # pnpmPath: 'C:\path\to\pnpm.cmd'   # 便携版不在 PATH 时建议填绝对路径
+        # scan: true                        # 关闭能力扫描（更快的审计）
 ```
 
-### 方式 B：npm（若已发布）
+刷新页面：**设置 → 插件 → 安全**。
 
-```powershell
-dsh plugin --profile web add dsh-security-manager
-```
-
-### 方式 C：本地开发
-
-```powershell
-git clone https://github.com/Kolos-alter/dsh-security-manager.git
-cd dsh-security-manager
-# 在 profile 目录执行（相对路径，避免空格路径问题）
-cd "$env:DSH_HOME\profiles\web"
-pnpm add "file:..\..\..\..\Kolos-alter\dsh-security-manager"
-```
-
-安装后**刷新页面**：设置 → 插件 → **安全** 标签页即出现。
-
-## ⚙️ 配置
-
-插件通过 cordis.patch.yml 的 `config` 字段配置（全部可选）：
-
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `home` | `$DSH_HOME` 或 `~/.dsh` | DSH 数据目录 |
-| `profile` | `web` | 管理的 profile 名 |
-| `pnpmPath` | `pnpm`（PATH） | pnpm 可执行文件；便携版/非 PATH 环境建议填绝对路径 |
+---
 
 ## 🖥️ 使用
 
-1. 打开 **设置 → 插件 → 安全** 标签页
-2. 列表展示**自动识别**的所有已安装插件：
-   - 绿色徽章 = 安全类插件（排最前）
-   - 蓝色徽章 = 来源：`npm` / `GitHub` / `npm+GitHub` / 未知
-   - 显示当前版本与 GitHub 仓库
-3. 每个插件可：
-   - **检查更新**：查询 npm 最新版 + 仓库信息
-   - **更新**：更新前自动创建快照（`before-update-<包名>`），随后从识别到的源更新
-   - **回退**：回退到包含该插件的历史快照
-4. 底部**快照历史**：列出所有快照，可单独回退
+- **顶部**：总评分 / 等级、高·中·低·提示计数、重新审计
+- **插件卡片**：已装版本、安装来源（`spec` 优先；本地源显式标注）、分级发现项与证据
+  - **检查更新**：查 npm 最新版本
+  - **预览更新**：显示候选版本的风险差异（有 high 会红色告警）
+  - **更新**：先快照再更新
+- **快照历史**：**差异**逐包列出变化；对可回退的包提供**回退此包**；也可**整表回退**
+  - 说明：若某包在快照中不存在，单包回退无法"移除"它，界面会明确提示需用整表回退
 
-## 🔌 提供的能力（API）
+---
 
-Host 半通过 webServer 提供 JSON 路由（同源访问）：
+## 🔌 Host API
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/security-manager/status` | GET | 自动识别的插件列表（版本 / 来源 / 仓库 / 安全标记） |
+| `/api/security-manager/audit` | GET | 本地静态审计：评分、逐包 findings、能力清单 |
 | `/api/security-manager/snapshots` | GET | 快照历史 |
 | `/api/security-manager/snapshot` | POST `{label}` | 创建快照 |
 | `/api/security-manager/update-check` | POST `{package}` | npm 元数据（最新版 + 仓库） |
-| `/api/security-manager/update` | POST `{package, version?}` | 更新（npm 或 GitHub 源，先快照） |
-| `/api/security-manager/rollback` | POST `{snapshot}` | 回退到快照 |
+| `/api/security-manager/update-preview` | POST `{package, version?}` | 候选版本的风险差异 |
+| `/api/security-manager/update` | POST `{package, version?, ref?}` | 更新（先快照） |
+| `/api/security-manager/snapshot-diff` | POST `{snapshot}` | 该快照与当前的逐包差异 |
+| `/api/security-manager/rollback-package` | POST `{package, snapshot}` | 只回退单个包 |
+| `/api/security-manager/rollback` | POST `{snapshot}` | 整表回退 |
 
-## 🔬 工作原理
+---
 
-1. **自动发现**：读 `profiles/<profile>/package.json` 的 `dependencies`，逐个读 `node_modules` 下的包信息
-2. **来源定位**：
-   - npm：`https://registry.npmjs.org/<pkg>` 查询（`dist-tags.latest` + `repository` 字段）
-   - GitHub：从包内 `repository` / npm 元数据解析 `github.com/<owner>/<repo>`
-3. **更新**：`pnpm add`（npm 源：`<pkg>[@version]`；GitHub 源：`github:<owner>/<repo>[#ref]`）
-4. **回退**：从快照还原 3 个受保护文件 + `pnpm install`
-
-## 🧪 独立测试（无需 DSH）
+## 🧪 验证（无需 DSH 运行）
 
 ```powershell
-# 自测：显示自动发现的插件、已装版本、快照
-node lib/manager.js --self-test
+npm test              # 22 例单元测试（node --test）
+npm run audit         # 对当前 home/profile 跑一次审计，输出 JSON
+npm run preview       # 对真实 npm 验证更新预览链路（只读）
 ```
 
-## 📂 项目结构
+`npm test` 覆盖：注释误报回归、来源分级、评分口径、快照差异与按包回退的守卫，
+以及**无需浏览器**的客户端渲染测试（伪造 `__ModuleLoader__` 与最小 React，执行真实 bundle）。
+
+### 本机实测结果（示例）
+
+```
+@nanmicoder/dsh-agent-teams  0.1.17-rc.1 → 0.1.21   预览: high=0 medium=0 low=5
+dsh-better-sidebar           0.19.0      → 0.21.1   预览: high=0 medium=0 low=2
+dsh-security-guard           prepare 脚本（git/本地源）→ high
+dsh-security-manager         本地 tarball 依赖 → medium
+```
+
+---
+
+## 📂 结构
 
 ```
 dsh-security-manager/
 ├── lib/
-│   ├── index.js    # Host 半：cordis 插件 + webServer JSON 路由
-│   ├── manager.js  # 核心：自动发现 / 来源定位 / 快照 / 更新 / 回退（纯 Node，可独立运行）
-│   └── client.js   # Client 半：设置页"安全"标签页（__ModuleLoader__ 格式）
-├── package.json    # dsh.client 声明 + 元数据
-└── README.md / README.en.md / LICENSE
+│   ├── index.js     # Host 半：webServer 路由（薄胶水）
+│   ├── manager.js   # 来源定位 / 快照 / 更新 / 回退 / 差异（纯 Node）
+│   ├── audit.js     # 安全审计引擎 + 更新影响预览（纯 Node，只读）
+│   └── client.js    # Client 半：设置→插件→安全（__ModuleLoader__ 格式）
+├── test/            # node --test：audit / manager / client
+├── tools/           # 对真实环境的只读验证脚本
+├── docs/            # 新版 DSH 能力对照与取舍（含实测证据）
+└── CHANGELOG.md
 ```
 
-## 🛡️ 安全说明
+---
 
-- 更新只对**自动识别到的已安装插件**执行，且**快照先行**；回退即时可用
-- 只读操作（status / snapshots / update-check）不修改任何文件
-- 脚本/路由不执行任意命令：更新仅通过 pnpm 安装指定包，来源由包元数据决定
-- 包名在进入 update / update-check 前经过**白名单校验**（拒绝路径穿越、反斜杠、`..` 等非法 spec）
-- 快照目录：`profiles/<profile>/.security-snapshots/`
+## 🛡️ 安全边界
+
+- 审计**只读**：只读取 profile 内已装包的文件与元数据，不执行其中任何代码
+- 更新只对**已识别到的已安装插件**执行，且**快照先行**；包名进入 update 前经白名单校验
+  （拒绝路径穿越、反斜杠、非法 spec）
+- 按包回退同样先建安全快照，回退操作本身可撤销
+- 只读操作（audit / snapshots / update-check / update-preview / snapshot-diff）不修改任何文件
 
 ## 📄 许可
 

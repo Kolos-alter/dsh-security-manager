@@ -1,7 +1,7 @@
 {
   "name": "dsh-security-manager",
-  "version": "0.2.0",
-  "description": "Plugin manager for DeepSeek Harness: auto-discovers installed plugins, locates their npm / GitHub source, and provides snapshot-backed update and rollback from a Settings → Plugins tab.",
+  "version": "0.3.0",
+  "description": "Security manager for DeepSeek Harness plugins: read-only static audit (install-time execution, supply-chain source, capability surface), risk diff before updating, and snapshot-backed update / rollback including single-package rollback.",
   "type": "module",
   "main": "lib/index.js",
   "files": [
